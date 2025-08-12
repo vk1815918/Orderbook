@@ -1,16 +1,30 @@
 #pragma once
-#include <string>
-#include <chrono>
+// #include <string>
+// #include <chrono>
+#include <cstdint>
 
-enum class OrderSide {BUY, SELL};
+enum class Side : uint8_t {
+    BUY = 0,
+    SELL = 1
+};
+
+enum class OrderType : uint8_t {
+    LIMIT = 0,
+    MARKET = 1
+};
 
 struct Order {
-    int id;
-    OrderSide side;
-    double price;
-    int quantity;
-    std::chrono::high_resolution_clock::time_point timestamp;
 
-    Order(int id, OrderSide side, double price, int quantity);
+    uint64_t id;
+    uint64_t timestamp;
+    uint32_t quantity;
+    uint32_t remaining;
+    uint32_t price;
+
+    Side side;
+    OrderType type;
+
+    Order* next = nullptr;
+    Order* prev = nullptr;
 
 };
