@@ -23,6 +23,17 @@ Orderbook-1/
 - CMake 3.14 or higher
 - C++17 compatible compiler (Visual Studio 2019+ on Windows, GCC 7+ on Linux)
 
+## Just copy and paste this
+
+```bash
+cd C:\Users\vkotr\Orderbook-1
+mkdir build
+cd build
+cmake ..
+cmake --build . --config Release
+.\Release\main.exe
+```
+
 ### Windows (Visual Studio)
 ```bash
 # Navigate to project directory
