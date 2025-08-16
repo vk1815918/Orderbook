@@ -1,39 +1,29 @@
 #pragma once
-
 #include <unordered_map>
 #include <atomic>
 #include <vector>
 #include <chrono>
-
+#include <shared_mutex>
 #include "Order.hpp"
 
+class OrderManager {
+private:
+    mutable std::shared_mutex ordersMutex;
+    std::unordered_map<uint64_t, Order> orders;
+    std::atomic<uint64_t> nextOrderID;
 
-// class OrderManager {
-// private:
+public:
+    OrderManager();
+    ~OrderManager() = default;
 
-//     std::unordered_map<uint64_t, Order> orders;
-//     std::atomic<uint64_t> nextOrderID;
-
-// public:
-
-//     OrderManager();
-//     ~OrderManager();
-
-//     uint64_t addOrder(uint8_t side, uint64_t price, uint32_t quantity) {
-//         Order* order = new Order();
-//         order->id = nextOrderID;
-//         order->price = price;
-//         order->side = side;
-//         order->quantity = quantity;
-//         order->remaining = quantity; // what is the point of a separate remaining?
-//         // set ts in nanoseconds
-//         orders[order->id] = *order;
-//     }
-
-//     bool cancelOrder(uint64_t orderID) {
-//         delete orders[orderID];
-//     }
-
-
-
-// };
+    // Core operations
+    uint64_t addOrder(uint8_t side, uint32_t price, uint32_t quantity);
+    bool cancelOrder(uint64_t orderID);
+    
+    // Batch operations
+    size_t addOrderBatch(const std::vector<Order>& orderBatch);
+    
+    // Queries
+    size_t getOrderCount() const;
+    std::vector<Order> getAllOrders() const;
+};
