@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstring>
 #include <cassert>
+#include <cstdlib>
 
 // Cache line size for x86-64
 static constexpr size_t CACHE_LINE_SIZE = 64;
@@ -76,7 +77,7 @@ public:
 
         std::memcpy(&item, &buffer[current_head], sizeof(T));
 
-        buffer.store((current_head + 1) & mask, std::memory_order_release);
+        head.store((current_head + 1) & mask, std::memory_order_release);
         return true;
     }
     
