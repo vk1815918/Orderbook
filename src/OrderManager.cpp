@@ -1,89 +1,106 @@
 
-#include <unordered_map>
-#include <atomic>
 #include <vector>
 #include <chrono>
-#include <shared_mutex>
 
 #include "Order.hpp"
 #include "OrderManager.hpp"
 #include <iostream>
 
-OrderManager::OrderManager() : nextOrderID(1) {
-    orders.reserve(10000);
+OrderManager::OrderManager(size_t num_shards)
+    : num_shards_(num_shards), nextOrderID_(1), shards_(num_shards), shard_mutexes_(num_shards)
+{
+    for (size_t i = 0; i < num_shards_; ++i)
+        shards_[i].reserve(1024);
 }
 
-uint64_t OrderManager::addOrder(uint8_t side, uint32_t price, uint32_t quantity) {
-    std::unique_lock<std::shared_mutex> lock(ordersMutex);
-    
+uint64_t OrderManager::addOrder(uint8_t side, uint32_t price, uint32_t quantity)
+{
+    uint64_t id = nextOrderID_.fetch_add(1, std::memory_order_relaxed);
     Order order;
-    order.id = nextOrderID.fetch_add(1, std::memory_order_relaxed);
+    order.id = id;
     order.price = price;
     order.quantity = quantity;
     order.side = side;
     order.remaining = quantity;
 
-    // Set timestamp in nanoseconds
+    // timestamp
     auto now = std::chrono::high_resolution_clock::now();
     auto duration = now.time_since_epoch();
     order.timestamp_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-    
-    orders[order.id] = order;        
-    return order.id;
+
+    size_t shard = id % num_shards_;
+    {
+        std::scoped_lock lock(shard_mutexes_[shard]);
+        shards_[shard].emplace(id, std::move(order));
+    }
+    return id;
 }
 
-size_t OrderManager::addOrderBatch(const std::vector<Order>& orderBatch) {
-    std::unique_lock<std::shared_mutex> lock(ordersMutex);
-
-    // Single timestamp for entire batch (performance optimization)
+size_t OrderManager::addOrderBatch(const std::vector<Order> &orderBatch)
+{
+    // single timestamp for the batch
     auto now = std::chrono::high_resolution_clock::now();
     auto duration = now.time_since_epoch();
     uint64_t batch_timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
 
     size_t counter = 0;
-    for (const Order& ord : orderBatch) {
+    for (const Order &ord : orderBatch)
+    {
+        uint64_t id = nextOrderID_.fetch_add(1, std::memory_order_relaxed);
         Order newOrder = ord;
-        newOrder.id = nextOrderID.fetch_add(1, std::memory_order_relaxed);
+        newOrder.id = id;
         newOrder.timestamp_ns = batch_timestamp;
-        orders[newOrder.id] = std::move(newOrder);
-        counter++;
+        size_t shard = id % num_shards_;
+        {
+            std::scoped_lock lock(shard_mutexes_[shard]);
+            shards_[shard].emplace(id, std::move(newOrder));
+        }
+        ++counter;
     }
-
     return counter;
 }
 
-bool OrderManager::cancelOrder(uint64_t orderID) {
-    std::unique_lock<std::shared_mutex> lock(ordersMutex);
-    
-    auto it = orders.find(orderID);
-    if (it != orders.end()) {
-        orders.erase(it);
+bool OrderManager::cancelOrder(uint64_t orderID)
+{
+    size_t shard = orderID % num_shards_;
+    std::scoped_lock lock(shard_mutexes_[shard]);
+    auto it = shards_[shard].find(orderID);
+    if (it != shards_[shard].end())
+    {
+        shards_[shard].erase(it);
         return true;
     }
     return false;
 }
 
-size_t OrderManager::getOrderCount() const {
-    std::shared_lock<std::shared_mutex> lock(ordersMutex);
-    return orders.size();
+size_t OrderManager::getOrderCount() const
+{
+    size_t total = 0;
+    for (size_t i = 0; i < num_shards_; ++i)
+    {
+        std::scoped_lock lock((std::mutex &)shard_mutexes_[i]);
+        total += shards_[i].size();
+    }
+    return total;
 }
 
-OrderManager::MatchingStats OrderManager::getMatchingEngineStats() const {
-    std::shared_lock<std::shared_mutex> lock(ordersMutex);
-    MatchingStats stats;
-    stats.total_orders = orders.size();
-    stats.throughput = 0.0; // For now, return 0. In a real system, calculate actual throughput
+OrderManager::MatchingStats OrderManager::getMatchingEngineStats() const
+{
+    MatchingStats stats{};
+    stats.total_orders = getOrderCount();
+    stats.throughput = 0.0;
     return stats;
 }
 
-std::vector<Order> OrderManager::getAllOrders() const {
-    std::shared_lock<std::shared_mutex> lock(ordersMutex);
-    
-    std::vector<Order> orderList;
-    orderList.reserve(orders.size());
-
-    for (const auto& [id, order]: orders) {
-        orderList.push_back(order);
+std::vector<Order> OrderManager::getAllOrders() const
+{
+    std::vector<Order> out;
+    out.reserve(getOrderCount());
+    for (size_t i = 0; i < num_shards_; ++i)
+    {
+        std::scoped_lock lock((std::mutex &)shard_mutexes_[i]);
+        for (auto &kv : shards_[i])
+            out.push_back(kv.second);
     }
-    return orderList;
+    return out;
 }
