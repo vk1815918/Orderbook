@@ -1,6 +1,4 @@
 
-#pragma once
-
 #include <unordered_map>
 #include <atomic>
 #include <vector>
@@ -68,6 +66,14 @@ bool OrderManager::cancelOrder(uint64_t orderID) {
 size_t OrderManager::getOrderCount() const {
     std::shared_lock<std::shared_mutex> lock(ordersMutex);
     return orders.size();
+}
+
+OrderManager::MatchingStats OrderManager::getMatchingEngineStats() const {
+    std::shared_lock<std::shared_mutex> lock(ordersMutex);
+    MatchingStats stats;
+    stats.total_orders = orders.size();
+    stats.throughput = 0.0; // For now, return 0. In a real system, calculate actual throughput
+    return stats;
 }
 
 std::vector<Order> OrderManager::getAllOrders() const {

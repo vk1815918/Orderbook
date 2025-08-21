@@ -4,6 +4,7 @@
 #include <vector>
 #include <chrono>
 #include <shared_mutex>
+#include <mutex>
 #include "Order.hpp"
 
 class OrderManager {
@@ -26,4 +27,11 @@ public:
     // Queries
     size_t getOrderCount() const;
     std::vector<Order> getAllOrders() const;
+    
+    // Stats for matching engine
+    struct MatchingStats {
+        double throughput;
+        uint64_t total_orders;
+    };
+    MatchingStats getMatchingEngineStats() const;
 };

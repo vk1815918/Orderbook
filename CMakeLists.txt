@@ -8,7 +8,8 @@ include_directories(include)
 add_executable(main
     main.cpp
     src/OrderManager.cpp
-    # src/MatchingEngine.cpp
+    src/OrderGenerator.cpp
+    src/MatchingWorker.cpp
 )
 
 enable_testing()

@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cassert>
 #include <cstdlib>
+#include <immintrin.h> // Required for _mm_pause()
 
 // Cache line size for x86-64
 static constexpr size_t CACHE_LINE_SIZE = 64;
@@ -69,15 +70,26 @@ public:
     }
 
     bool pop(T& item) noexcept {
-        size_t current_head = head.load(std::memory_order_relaxed);
+        // Use acquire ordering to ensure we see the latest tail
+        size_t current_head = head.load(std::memory_order_acquire);
+        size_t current_tail = tail.load(std::memory_order_acquire);
 
-        if (current_head == tail.load(std::memory_order_acquire)) {
+        if (current_head == current_tail) {
             return false;
         }
 
+        // Copy the item
         std::memcpy(&item, &buffer[current_head], sizeof(T));
 
-        head.store((current_head + 1) & mask, std::memory_order_release);
+        // Use compare-and-swap to ensure only one thread can update head
+        size_t next_head = (current_head + 1) & mask;
+        if (!head.compare_exchange_strong(current_head, next_head, 
+                                        std::memory_order_release, 
+                                        std::memory_order_relaxed)) {
+            // Another thread beat us to it, retry
+            return false;
+        }
+
         return true;
     }
     
@@ -98,12 +110,20 @@ public:
 
     size_t popBatch(T* items, size_t max_count) noexcept {
         size_t popped = 0;
+        size_t retry_count = 0;
+        const size_t max_retries = 3; // Limit retries to prevent infinite loops
 
-        for (size_t i = 0; i < max_count; ++i) {
-            if (!pop(items[i])) {
-                break;
-            } else {
+        for (size_t i = 0; i < max_count && retry_count < max_retries; ++i) {
+            if (pop(items[i])) {
                 popped++;
+                retry_count = 0; // Reset retry count on success
+            } else {
+                retry_count++;
+                if (retry_count >= max_retries) {
+                    break; // Stop trying after max retries
+                }
+                // Small delay to reduce contention
+                _mm_pause();
             }
         }
 
@@ -122,7 +142,13 @@ public:
     size_t size() const noexcept {
         size_t h = head.load(std::memory_order_acquire);
         size_t t = tail.load(std::memory_order_acquire);
-        return (t - h + capacity) & mask;
+        
+        // Fix: Handle wrap-around correctly
+        if (t >= h) {
+            return t - h;
+        } else {
+            return (capacity - h) + t;
+        }
     }
     
     size_t available() const noexcept {
