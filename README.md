@@ -26,12 +26,9 @@ Orderbook-1/
 ## Just copy and paste this
 
 ```bash
-cd C:\Users\vkotr\Orderbook-1
-mkdir build
-cd build
-cmake ..
-cmake --build . --config Release
-.\Release\main.exe
+cd /mnt/c/Users/vkotr/Orderbook-1/build
+make -j4
+./main
 ```
 
 ### Windows (Visual Studio)
